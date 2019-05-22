@@ -148,8 +148,8 @@ void allocate_Map() {
 }
 void do_Map(void ** args){
   char buf[32];
-  FILE * fp = arg[0];
-  int32_t index = arg[1];
+  FILE * fp = args[0];
+  int32_t index = args[1];
   pthread_mutex_lock(&file_mutex);
   fscanf(fp, "%32s", buf);
   pthread_mutex_unlock(&file_mutex);
@@ -157,6 +157,7 @@ void do_Map(void ** args){
 	globalMap[index].hash.key = key;
 	MurmurHash3_x86_32(key, strlen(key), 0x13371337, &globalMap[index].hash.hash);
 	globalMap[index].value = 1;
+  printf("%d : %s / %08x / %08x\n", index, key, globalMap[index].hash.hash, globalMap[index].value);
 }
 
 void do_Reduce(int32_t index){
