@@ -126,16 +126,37 @@ typedef struct _Map{
 	uint32_t value;
 } Map;
 Map * globalMap = NULL; 
-
+pthread_mutex_t file_mutex;
+pthread_mutex_t * map_mutex;
+void * stringRemoveNonAlphaNum(char *str){
+    int32_t i = 0;
+    int32_t j = 0;
+    char c;
+    while ((c = str[i++]) != '\0')
+    {
+        if (isalnum(c) || c == '$' || c == '-')
+        {
+            str[j++] = c;
+        }
+    }
+    str[j] = '\0';
+   return str;
+}
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
-void do_Map(char * key, int32_t index){
+void do_Map(FILE *fp, int32_t index){
+  char buf[32];
+  pthread_mutex_lock(&file_mutex);
+  fscanf(fp, "%32s", buf);
+  pthread_mutex_unlock(&file_mutex);
+  char * key = strdup(stringRemoveNonAlphaNum(buf));
 	globalMap[index].hash.key = key;
 	MurmurHash3_x86_32(key, strlen(key), 0x13371337, &globalMap[index].hash.hash);
 	globalMap[index].value = 1;
 }
+
 void do_Reduce(int32_t index){
 	Map * tMap = &globalMap[index];
 	if(tMap->hash.hash == 0)
@@ -150,6 +171,7 @@ void do_Reduce(int32_t index){
 	globalMap[index].value++;
 	return;
 }
+
 int main(int argc, char ** argv){
 	if (argc != 2) {
 		fprintf(stderr, "%s: not enough input\n", argv[0]);
@@ -159,6 +181,13 @@ int main(int argc, char ** argv){
   allocate_Map();
 	FILE* fp = fopen(argv[1], "r");
 	char buf[4096];
+  int32_t index =0;
+  while( !feof(fp) ){
+    pthread_create(&thread[index%0x100], NULL, do_Map, { fp, index});
+    printf("[%08x]\n", thread[index%0x100]);
+  }
+  /*
   while(fscanf(fp, "%s", buf) != EOF)
     printf("[%s]\n", buf);
+  */
 }
