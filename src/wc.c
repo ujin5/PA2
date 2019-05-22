@@ -128,6 +128,7 @@ typedef struct _Map{
 Map * globalMap = NULL; 
 pthread_mutex_t file_mutex;
 pthread_mutex_t * map_mutex;
+int flags = 0;
 void * stringRemoveNonAlphaNum(char *str){
     int32_t i = 0;
     int32_t j = 0;
@@ -151,6 +152,11 @@ void do_Map(void ** args){
   FILE * fp = args[0];
   int32_t index = args[1];
   pthread_mutex_lock(&file_mutex);
+  if(feof(fp)){
+    flags = 1;
+    pthread_mutex_unlock(&file_mutex);
+    return;
+  }
   fscanf(fp, "%32s", buf);
   pthread_mutex_unlock(&file_mutex);
   char * key = strdup(stringRemoveNonAlphaNum(buf));
@@ -185,7 +191,8 @@ int main(int argc, char ** argv){
 	FILE* fp = fopen(argv[1], "r");
 	char buf[4096];
   int32_t index =0;
-  while( !feof(fp) ){
+  
+  while( !flags ){
     void * args = { fp, index };
     pthread_create(&threads[index%0x100], NULL, do_Map, args);
     printf("[%08x]\n", threads[index%0x100]);
