@@ -152,7 +152,7 @@ void do_Map(void ** args){
   FILE * fp = args[0];
   int32_t index = args[1];
   pthread_mutex_lock(&file_mutex);
-  if(feof(fp)){
+  if( flags == 1||feof(fp)){
     flags = 1;
     pthread_mutex_unlock(&file_mutex);
     return;
