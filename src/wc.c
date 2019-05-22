@@ -146,8 +146,10 @@ void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
-void do_Map(FILE *fp, int32_t index){
+void do_Map(void ** args){
   char buf[32];
+  FILE * fp = arg[0];
+  int32_t index = arg[1];
   pthread_mutex_lock(&file_mutex);
   fscanf(fp, "%32s", buf);
   pthread_mutex_unlock(&file_mutex);
@@ -183,8 +185,9 @@ int main(int argc, char ** argv){
 	char buf[4096];
   int32_t index =0;
   while( !feof(fp) ){
-    pthread_create(&thread[index%0x100], NULL, do_Map, { fp, index});
-    printf("[%08x]\n", thread[index%0x100]);
+    void * args = { fp, index };
+    pthread_create(&threads[index%0x100], NULL, do_Map, args);
+    printf("[%08x]\n", threads[index%0x100]);
   }
   /*
   while(fscanf(fp, "%s", buf) != EOF)
