@@ -148,11 +148,13 @@ void allocate_Map() {
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
 void do_Map(void ** args){
+  printf("START\n");
   char buf[32];
   FILE * fp = args[0];
   int32_t index = args[1];
   pthread_mutex_lock(&file_mutex);
   if( flags == 1||feof(fp)){
+    printf("wtf\n");
     flags = 1;
     pthread_mutex_unlock(&file_mutex);
     return;
