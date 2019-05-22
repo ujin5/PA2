@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <pthread.h>
 #ifdef __GNUC__
 #define FORCE_INLINE __attribute__((always_inline)) inline
 #else
@@ -127,7 +128,7 @@ typedef struct _Map{
 Map * globalMap = NULL; 
 
 void allocate_Map() {
-	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
 void do_Map(char * key, int32_t index){
@@ -157,7 +158,7 @@ int main(int argc, char ** argv){
   pthread_t * threads = (pthread_t *)malloc(0x100 * sizeof(pthread_t));
   allocate_Map();
 	FILE* fp = fopen(argv[1], "r");
-	char buf[4096] = { 0, };
+	char buf[4096];
   while(fscanf(fp, "%s", buf) != EOF)
     printf("[%s]\n", buf);
 }
