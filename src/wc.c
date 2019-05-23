@@ -160,7 +160,7 @@ void do_Map(int32_t * nWord){
     strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
     MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0xdeadbeef, &globalMap[index].hash.hash);
     globalMap[index].value = 1;
-    //printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
+    printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
     (*nWord)++;
     pthread_mutex_unlock(&map_mutex);
   }
@@ -178,17 +178,17 @@ void do_Reduce(int32_t * nWord){
     }
     pthread_mutex_unlock(&reduce_mutex);
 
-    for(int32_t j = i; j < max; i++){
-      pthread_mutex_lock(&reduce_mutex);
+    for(int32_t j = i+1; j < max; j++){
+      printf("[%08x]\n", globalMap[j].hash.hash);
       if( globalMap[j].hash.hash == 0){
-        pthread_mutex_unlock(&reduce_mutex);
         continue;
       }
       if( tMap->hash.hash == globalMap[j].hash.hash){
+        pthread_mutex_lock(&reduce_mutex);
         globalMap[j].value++;
         memset((void *)&globalMap[j], 0x0, sizeof(Map));
+        pthread_mutex_unlock(&reduce_mutex);
       }
-      pthread_mutex_unlock(&reduce_mutex);
     }
   }
 	return;
@@ -211,6 +211,12 @@ int main(int argc, char ** argv){
   int32_t nThread = atoi(argv[2]);
   for(int32_t i = 0; i < nThread; i++)
     pthread_create(&threads[i], NULL, do_Map, &nWord);
+  
+  for(int32_t i = 0; i < nThread; i++)
+    pthread_join(threads[i], NULL);
+  
+  for(int32_t i = 0; i < nThread; i++)
+    pthread_create(&threads[i], NULL, do_Reduce, &nWord);
   
   for(int32_t i = 0; i < nThread; i++)
     pthread_join(threads[i], NULL);
