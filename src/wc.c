@@ -125,8 +125,12 @@ typedef struct _Map{
 	uint32_t value;
 } Map;
 Map * globalMap = NULL; 
+Map * reduceMap = NULL;
+
 pthread_mutex_t reduce_mutex;
 pthread_mutex_t map_mutex;
+int32_t shared_cur;
+int32_t reduceN;
 int flags = 0;
 FILE * fp;
 void * stringRemoveNonAlphaNum(char *str){
@@ -146,6 +150,8 @@ void * stringRemoveNonAlphaNum(char *str){
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
+  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+	memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
 }
 void do_Map(int32_t * nWord){
   printf("START\n");
@@ -166,30 +172,22 @@ void do_Map(int32_t * nWord){
   }
 }
 
-void do_Reduce(int32_t * nWord){
+void do_Reduce(int32_t nWord){
   int32_t max = *nWord;
-  for(int32_t i = 0; i < nWord; i++){
-
-    Map * tMap = &globalMap[i];
+  while(1){
     pthread_mutex_lock(&reduce_mutex);
-    if(tMap->hash.hash == 0){
-      pthread_mutex_unlock(&reduce_mutex);
-      continue;
+    if(shared_cur >= nWord)
+      return;
+    i = shared_cur;
+    Map * tMap = &globalMap[i];
+    for(int32_t j = 0; j < reduceN; j++){
+      if( reduceMap[j].hash.hash && tMap->hash.hash == reduceMap[j].hash.hash){
+        reduceMap[j].value++;
+        memset((void *)&reduceMap[j], 0x0, sizeof(Map));
+      }
     }
+    shared_cur++;
     pthread_mutex_unlock(&reduce_mutex);
-
-    for(int32_t j = i+1; j < max; j++){
-      printf("[%08x]\n", globalMap[j].hash.hash);
-      if( globalMap[j].hash.hash == 0){
-        continue;
-      }
-      if( tMap->hash.hash == globalMap[j].hash.hash){
-        pthread_mutex_lock(&reduce_mutex);
-        globalMap[j].value++;
-        memset((void *)&globalMap[j], 0x0, sizeof(Map));
-        pthread_mutex_unlock(&reduce_mutex);
-      }
-    }
   }
 	return;
 }
@@ -216,7 +214,7 @@ int main(int argc, char ** argv){
     pthread_join(threads[i], NULL);
   
   for(int32_t i = 0; i < nThread; i++)
-    pthread_create(&threads[i], NULL, do_Reduce, &nWord);
+    pthread_create(&threads[i], NULL, do_Reduce, nWord);
   
   for(int32_t i = 0; i < nThread; i++)
     pthread_join(threads[i], NULL);
