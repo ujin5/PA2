@@ -198,6 +198,15 @@ void do_Reduce(int32_t nWord){
   }
 	return;
 }
+int static compare (const Map* first, const Map* second)
+{
+    if (first->value > second->value)
+        return 1;
+    else if (first->value < second->value)
+        return -1;
+    else
+        return 0;
+}
 
 int main(int argc, char ** argv){
 	if (argc != 3) {
@@ -225,6 +234,7 @@ int main(int argc, char ** argv){
   
   for(int32_t i = 0; i < nThread; i++)
     pthread_join(threads[i], NULL);
+  qsort(reduceMap, reduceN, sizeof(Map), compare);
   for(int32_t i = 0; i < reduceN; i++)
     printf("%d : %s(%08x) = %d\n", i, reduceMap[i].hash.key, reduceMap[i].hash.hash, reduceMap[i].value);	
   /*
