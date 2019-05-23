@@ -201,9 +201,9 @@ void do_Reduce(int32_t nWord){
 int static compare (const Map* first, const Map* second)
 {
     if (first->value > second->value)
-        return 1;
-    else if (first->value < second->value)
         return -1;
+    else if (first->value < second->value)
+        return 1;
     else
         return 0;
 }
