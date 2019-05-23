@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <stdbool.h>
 #ifdef __GNUC__
 #define FORCE_INLINE __attribute__((always_inline)) inline
 #else
@@ -154,7 +155,7 @@ void allocate_Map() {
 	memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
 }
 void do_Map(int32_t * nWord){
-  printf("START\n");
+  //printf("START\n");
   char buf[32];
   for(int i = 0; ; i++){
     pthread_mutex_lock(&map_mutex);
@@ -166,26 +167,32 @@ void do_Map(int32_t * nWord){
     strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
     MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0xdeadbeef, &globalMap[index].hash.hash);
     globalMap[index].value = 1;
-    printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
+    //printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
     (*nWord)++;
     pthread_mutex_unlock(&map_mutex);
   }
 }
 
 void do_Reduce(int32_t nWord){
-  int32_t max = *nWord;
+  int32_t max = nWord;
   while(1){
     pthread_mutex_lock(&reduce_mutex);
-    if(shared_cur >= nWord)
+    if(shared_cur >= nWord){
+      pthread_mutex_unlock(&reduce_mutex);
       return;
-    i = shared_cur;
+    }
+    int32_t i = shared_cur;
     Map * tMap = &globalMap[i];
+    int32_t dup = false;
     for(int32_t j = 0; j < reduceN; j++){
-      if( reduceMap[j].hash.hash && tMap->hash.hash == reduceMap[j].hash.hash){
+      if( tMap->hash.hash == reduceMap[j].hash.hash){
+        memcpy(&reduceMap[j], tMap, sizeof(Map));
         reduceMap[j].value++;
-        memset((void *)&reduceMap[j], 0x0, sizeof(Map));
+        dup = true;
       }
     }
+    if(!dup)
+      memcpy(&reduceMap[reduceN++], tMap, sizeof(Map));
     shared_cur++;
     pthread_mutex_unlock(&reduce_mutex);
   }
@@ -218,7 +225,8 @@ int main(int argc, char ** argv){
   
   for(int32_t i = 0; i < nThread; i++)
     pthread_join(threads[i], NULL);
-	
+  for(int32_t i = 0; i < reduceN; i++)
+    printf("%d : %s(%08x) = %d\n", i, reduceMap[i].hash.key, reduceMap[i].hash.hash, reduceMap[i].value);	
   /*
   while(fscanf(fp, "%s", buf) != EOF)
     printf("[%s]\n", buf);
