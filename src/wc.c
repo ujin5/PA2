@@ -144,28 +144,26 @@ void * stringRemoveNonAlphaNum(char *str){
    return str;
 }
 void allocate_Map() {
-	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+	globalMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
 void do_Map(int32_t * nWord){
   printf("START\n");
   char buf[32];
-  int32_t index = *nWord;
   for(int i = 0; ; i++){
     pthread_mutex_lock(&file_mutex);
+    int32_t index = *nWord;
     if(fscanf(fp, "%32s", buf) == -1){
       pthread_mutex_unlock(&file_mutex);
-      pthread_exit(NULL);
       return;
     }
     strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
     MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0x13371337, &globalMap[index].hash.hash);
     globalMap[index].value = 1;
     printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
-    *nWord++;
+    (*nWord)++;
     pthread_mutex_unlock(&file_mutex);
   }
-  pthread_exit(NULL);
 }
 
 void do_Reduce(int32_t index){
@@ -184,7 +182,7 @@ void do_Reduce(int32_t index){
 }
 
 int main(int argc, char ** argv){
-	if (argc != 2) {
+	if (argc != 3) {
 		fprintf(stderr, "%s: not enough input\n", argv[0]);
 		exit(1);
 	}
@@ -192,12 +190,16 @@ int main(int argc, char ** argv){
   allocate_Map();
 	fp = fopen(argv[1], "r");
 	char buf[4096];
+  pthread_mutex_init(&file_mutex, NULL);
   int32_t index =0;
   int32_t nWord = 0;
-  int32_t nThread = 16;
-  while( nThread--){
-    pthread_create(&threads[index++], NULL, do_Map, &nWord);
-  }
+  int32_t nThread = atoi(argv[2]);
+  for(int32_t i = 0; i < nThread; i++)
+    pthread_create(&threads[i], NULL, do_Map, &nWord);
+  
+  for(int32_t i = 0; i < nThread; i++)
+    pthread_join(threads[i], NULL);
+	
   /*
   while(fscanf(fp, "%s", buf) != EOF)
     printf("[%s]\n", buf);
