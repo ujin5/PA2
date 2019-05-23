@@ -10,7 +10,6 @@
 #else
 #define FORCE_INLINE inline
 #endif
-
 static FORCE_INLINE uint32_t rotl32 ( uint32_t x, int8_t r )
 {
   return (x << r) | (x >> (32 - r));
@@ -117,7 +116,7 @@ void MurmurHash3_x86_32 ( const void * key, int len,
 }
 
 typedef struct _HashElem{
-	char * key;
+	char key[32];
 	uint32_t hash;
 } HashElem;
 
@@ -129,13 +128,14 @@ Map * globalMap = NULL;
 pthread_mutex_t file_mutex;
 pthread_mutex_t * map_mutex;
 int flags = 0;
+FILE * fp;
 void * stringRemoveNonAlphaNum(char *str){
     int32_t i = 0;
     int32_t j = 0;
     char c;
     while ((c = str[i++]) != '\0')
     {
-        if (isalnum(c) || c == '$' || c == '-')
+        if (isalnum(c))
         {
             str[j++] = c;
         }
@@ -147,13 +147,11 @@ void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
-void do_Map(void ** args){
+void do_Map(int32_t index){
   printf("START\n");
   char buf[32];
-  FILE * fp = args[0];
-  int32_t index = args[1];
   pthread_mutex_lock(&file_mutex);
-  if( flags == 1||feof(fp)){
+  if( feof(fp) ){
     printf("wtf\n");
     flags = 1;
     pthread_mutex_unlock(&file_mutex);
@@ -161,11 +159,11 @@ void do_Map(void ** args){
   }
   fscanf(fp, "%32s", buf);
   pthread_mutex_unlock(&file_mutex);
-  char * key = strdup(stringRemoveNonAlphaNum(buf));
-	globalMap[index].hash.key = key;
-	MurmurHash3_x86_32(key, strlen(key), 0x13371337, &globalMap[index].hash.hash);
+	strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
+	MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0x13371337, &globalMap[index].hash.hash);
 	globalMap[index].value = 1;
-  printf("%d : %s / %08x / %08x\n", index, key, globalMap[index].hash.hash, globalMap[index].value);
+  printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
+ pthread_exit(NULL);
 }
 
 void do_Reduce(int32_t index){
@@ -190,14 +188,20 @@ int main(int argc, char ** argv){
 	}
   pthread_t * threads = (pthread_t *)malloc(0x100 * sizeof(pthread_t));
   allocate_Map();
-	FILE* fp = fopen(argv[1], "r");
+	fp = fopen(argv[1], "r");
 	char buf[4096];
   int32_t index =0;
-  
-  while( !flags ){
-    void * args = { fp, index };
-    pthread_create(&threads[index%0x100], NULL, do_Map, args);
-    printf("[%08x]\n", threads[index%0x100]);
+  int32_t index2 = 0;
+  while( flags != 1){
+    if( index2 >= 0x100){
+      for(int i = 0; i < index2; i++)
+	pthread_join(threads[i], NULL);
+      index2 =0;
+    }
+    {
+    pthread_create(&threads[index2++], NULL, do_Map, index++);
+   // printf("[%08x]\n", threads[index%0x100]);
+    }
   }
   /*
   while(fscanf(fp, "%s", buf) != EOF)
