@@ -125,8 +125,8 @@ typedef struct _Map{
 	uint32_t value;
 } Map;
 Map * globalMap = NULL; 
-pthread_mutex_t file_mutex;
-pthread_mutex_t * map_mutex;
+pthread_mutex_t reduce_mutex;
+pthread_mutex_t map_mutex;
 int flags = 0;
 FILE * fp;
 void * stringRemoveNonAlphaNum(char *str){
@@ -151,33 +151,46 @@ void do_Map(int32_t * nWord){
   printf("START\n");
   char buf[32];
   for(int i = 0; ; i++){
-    pthread_mutex_lock(&file_mutex);
+    pthread_mutex_lock(&map_mutex);
     int32_t index = *nWord;
     if(fscanf(fp, "%32s", buf) == -1){
-      pthread_mutex_unlock(&file_mutex);
+      pthread_mutex_unlock(&map_mutex);
       return;
     }
     strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
-    MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0x13371337, &globalMap[index].hash.hash);
+    MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0xdeadbeef, &globalMap[index].hash.hash);
     globalMap[index].value = 1;
-    printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
+    //printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
     (*nWord)++;
-    pthread_mutex_unlock(&file_mutex);
+    pthread_mutex_unlock(&map_mutex);
   }
 }
 
-void do_Reduce(int32_t index){
-	Map * tMap = &globalMap[index];
-	if(tMap->hash.hash == 0)
-		return;
-	for(int32_t i = 0; i < index -1; i++){
-		if( tMap->hash.hash == globalMap[i].hash.hash){
-			globalMap[i].value++;
-			memset((void *)&globalMap[index], 0x0, sizeof(Map));
-			return;
-		}
-	}
-	globalMap[index].value++;
+void do_Reduce(int32_t * nWord){
+  int32_t max = *nWord;
+  for(int32_t i = 0; i < nWord; i++){
+
+    Map * tMap = &globalMap[i];
+    pthread_mutex_lock(&reduce_mutex);
+    if(tMap->hash.hash == 0){
+      pthread_mutex_unlock(&reduce_mutex);
+      continue;
+    }
+    pthread_mutex_unlock(&reduce_mutex);
+
+    for(int32_t j = i; j < max; i++){
+      pthread_mutex_lock(&reduce_mutex);
+      if( globalMap[j].hash.hash == 0){
+        pthread_mutex_unlock(&reduce_mutex);
+        continue;
+      }
+      if( tMap->hash.hash == globalMap[j].hash.hash){
+        globalMap[j].value++;
+        memset((void *)&globalMap[j], 0x0, sizeof(Map));
+      }
+      pthread_mutex_unlock(&reduce_mutex);
+    }
+  }
 	return;
 }
 
@@ -190,7 +203,9 @@ int main(int argc, char ** argv){
   allocate_Map();
 	fp = fopen(argv[1], "r");
 	char buf[4096];
-  pthread_mutex_init(&file_mutex, NULL);
+  pthread_mutex_init(&map_mutex, NULL);
+  pthread_mutex_init(&reduce_mutex, NULL);
+
   int32_t index =0;
   int32_t nWord = 0;
   int32_t nThread = atoi(argv[2]);
