@@ -147,23 +147,25 @@ void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
 }
-void do_Map(int32_t index){
+void do_Map(int32_t * nWord){
   printf("START\n");
   char buf[32];
-  pthread_mutex_lock(&file_mutex);
-  if( feof(fp) ){
-    printf("wtf\n");
-    flags = 1;
+  int32_t index = *nWord;
+  for(int i = 0; ; i++){
+    pthread_mutex_lock(&file_mutex);
+    if(fscanf(fp, "%32s", buf) == -1){
+      pthread_mutex_unlock(&file_mutex);
+      pthread_exit(NULL);
+      return;
+    }
+    strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
+    MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0x13371337, &globalMap[index].hash.hash);
+    globalMap[index].value = 1;
+    printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
+    *nWord++;
     pthread_mutex_unlock(&file_mutex);
-    return;
   }
-  fscanf(fp, "%32s", buf);
-  pthread_mutex_unlock(&file_mutex);
-	strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
-	MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0x13371337, &globalMap[index].hash.hash);
-	globalMap[index].value = 1;
-  printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
- pthread_exit(NULL);
+  pthread_exit(NULL);
 }
 
 void do_Reduce(int32_t index){
@@ -191,17 +193,10 @@ int main(int argc, char ** argv){
 	fp = fopen(argv[1], "r");
 	char buf[4096];
   int32_t index =0;
-  int32_t index2 = 0;
-  while( flags != 1){
-    if( index2 >= 0x100){
-      for(int i = 0; i < index2; i++)
-	pthread_join(threads[i], NULL);
-      index2 =0;
-    }
-    {
-    pthread_create(&threads[index2++], NULL, do_Map, index++);
-   // printf("[%08x]\n", threads[index%0x100]);
-    }
+  int32_t nWord = 0;
+  int32_t nThread = 16;
+  while( nThread--){
+    pthread_create(&threads[index++], NULL, do_Map, &nWord);
   }
   /*
   while(fscanf(fp, "%s", buf) != EOF)
