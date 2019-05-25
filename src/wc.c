@@ -157,12 +157,18 @@ void allocate_Map() {
 inline int32_t readWord(FILE * fp, char * buf){
   char c;
   char j = 0;
+  int32_t r = -1;
   while(!feof(fp)){
     char c = getc(fp);
     if (isalnum(c))
-      buf[j++] = c;
+      buf[j++] = tolower(c);
+    else{
+     buf[j] = '\0';
+     return 0;
+    }
   }
   buf[j] = '\0';
+  return r;
 }
 void do_Map(int32_t * nWord){
   //printf("START\n");
@@ -170,11 +176,13 @@ void do_Map(int32_t * nWord){
   for(int i = 0; ; i++){
     pthread_mutex_lock(&map_mutex);
     int32_t index = *nWord;
-    readWord(fp, buf);
-    printf("[%s]\n",buf);
-    if(strlen(buf) == 0){
+    if(readWord(fp, buf) == -1){
       pthread_mutex_unlock(&map_mutex);
       return;
+    }
+    else if( strlen(buf) == 0){
+      pthread_mutex_unlock(&map_mutex);
+      continue; 
     }
     strcpy(globalMap[index].hash.key, buf);
     MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0xdeadbeef, &globalMap[index].hash.hash);
@@ -198,9 +206,9 @@ void do_Reduce(int32_t nWord){
     int32_t dup = false;
     for(int32_t j = 0; j < reduceN; j++){
       if( tMap->hash.hash == reduceMap[j].hash.hash){
-        memcpy(&reduceMap[j], tMap, sizeof(Map));
         reduceMap[j].value++;
         dup = true;
+        break;
       }
     }
     if(!dup)
