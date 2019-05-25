@@ -150,9 +150,19 @@ void * stringRemoveNonAlphaNum(char *str){
 }
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
-	memset((void *)globalMap, 0x0, sizeof(Map)*0x10000);
-  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+	memset((void *)globalMap, 0x0, sizeof(Map)*0x100000);
+  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
+}
+inline int32_t readWord(FILE * fp, char * buf){
+  char c;
+  char j = 0;
+  while(!feof(fp)){
+    char c = getc(fp);
+    if (isalnum(c))
+      buf[j++] = c;
+  }
+  buf[j] = '\0';
 }
 void do_Map(int32_t * nWord){
   //printf("START\n");
@@ -160,11 +170,13 @@ void do_Map(int32_t * nWord){
   for(int i = 0; ; i++){
     pthread_mutex_lock(&map_mutex);
     int32_t index = *nWord;
-    if(fscanf(fp, "%32s", buf) == -1){
+    readWord(fp, buf);
+    printf("[%s]\n",buf);
+    if(strlen(buf) == 0){
       pthread_mutex_unlock(&map_mutex);
       return;
     }
-    strcpy(globalMap[index].hash.key, stringRemoveNonAlphaNum(buf));
+    strcpy(globalMap[index].hash.key, buf);
     MurmurHash3_x86_32(globalMap[index].hash.key, strlen(globalMap[index].hash.key), 0xdeadbeef, &globalMap[index].hash.hash);
     globalMap[index].value = 1;
     //printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
