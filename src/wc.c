@@ -241,13 +241,13 @@ int main(int argc, char ** argv){
 	fp = fopen(argv[1], "r");
   fseek(fp, 0, SEEK_END);
   int fileLength = ftell(fp);
-  //fclose(f);
   rewind(fp);
   int32_t nThread = atoi(argv[2]);
-  limit = fileLength;
+  limit = 1;
   if( fileLength > 0x1000000){
     limit = (fileLength / 0x1000000) + 1; 
   }
+  printf("%d / %d\n", fileLength, limit);
   for(int32_t i = 0; i < limit; i++){
     pthread_mutex_init(&map_mutex, NULL);
     pthread_mutex_init(&reduce_mutex, NULL);
