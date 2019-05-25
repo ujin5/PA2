@@ -134,6 +134,7 @@ int32_t shared_cur;
 int32_t reduceN;
 int flags = 0;
 FILE * fp;
+uint32_t limit = 0;
 void * stringRemoveNonAlphaNum(char *str){
     int32_t i = 0;
     int32_t j = 0;
@@ -150,10 +151,11 @@ void * stringRemoveNonAlphaNum(char *str){
 }
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
-	memset((void *)globalMap, 0x0, sizeof(Map)*0x100000);
+	memset((void *)globalMap, 0x0, sizeof(Map)*0x1000000);
   reduceMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
 }
+
 inline int32_t readWord(FILE * fp, char * buf){
   char c;
   char j = 0;
@@ -170,13 +172,14 @@ inline int32_t readWord(FILE * fp, char * buf){
   buf[j] = '\0';
   return r;
 }
+
 void do_Map(int32_t * nWord){
   //printf("START\n");
   char buf[32];
   for(int i = 0; ; i++){
     pthread_mutex_lock(&map_mutex);
     int32_t index = *nWord;
-    if(readWord(fp, buf) == -1){
+    if(index >= 0x1000000 || readWord(fp, buf) == -1){
       pthread_mutex_unlock(&map_mutex);
       return;
     }
@@ -236,25 +239,35 @@ int main(int argc, char ** argv){
   pthread_t * threads = (pthread_t *)malloc(0x100 * sizeof(pthread_t));
   allocate_Map();
 	fp = fopen(argv[1], "r");
-	char buf[4096];
-  pthread_mutex_init(&map_mutex, NULL);
-  pthread_mutex_init(&reduce_mutex, NULL);
-
-  int32_t index =0;
-  int32_t nWord = 0;
+  fseek(fp, 0, SEEK_END);
+  int fileLength = ftell(fp);
+  //fclose(f);
+  rewind(fp);
   int32_t nThread = atoi(argv[2]);
-  for(int32_t i = 0; i < nThread; i++)
-    pthread_create(&threads[i], NULL, do_Map, &nWord);
-  
-  for(int32_t i = 0; i < nThread; i++)
-    pthread_join(threads[i], NULL);
-  
-  for(int32_t i = 0; i < nThread; i++)
-    pthread_create(&threads[i], NULL, do_Reduce, nWord);
-  
-  for(int32_t i = 0; i < nThread; i++)
-    pthread_join(threads[i], NULL);
-  qsort(reduceMap, reduceN, sizeof(Map), compare);
+  limit = fileLength;
+  if( fileLength > 0x1000000){
+    limit = (fileLength / 0x1000000) + 1; 
+  }
+  for(int32_t i = 0; i < limit; i++){
+    pthread_mutex_init(&map_mutex, NULL);
+    pthread_mutex_init(&reduce_mutex, NULL);
+
+    int32_t index =0;
+    int32_t nWord = 0;
+    
+    for(int32_t i = 0; i < nThread; i++)
+      pthread_create(&threads[i], NULL, do_Map, &nWord);
+    
+    for(int32_t i = 0; i < nThread; i++)
+      pthread_join(threads[i], NULL);
+    
+    for(int32_t i = 0; i < nThread; i++)
+      pthread_create(&threads[i], NULL, do_Reduce, nWord);
+    
+    for(int32_t i = 0; i < nThread; i++)
+      pthread_join(threads[i], NULL);
+    qsort(reduceMap, reduceN, sizeof(Map), compare);
+  }
   for(int32_t i = 0; i < reduceN; i++)
     printf("%d : %s(%08x) = %d\n", i, reduceMap[i].hash.key, reduceMap[i].hash.hash, reduceMap[i].value);	
   /*
