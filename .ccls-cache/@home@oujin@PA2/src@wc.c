@@ -28,7 +28,7 @@ int32_t fnv_32_str(char *str, int32_t hval)
 }
 
 typedef struct _HashElem{
-	char key[1024];
+	char key[512];
 	uint32_t hash;
 } HashElem;
 
@@ -64,9 +64,9 @@ void * stringRemoveNonAlphaNum(char *str){
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	//memset((void *)globalMap, 0x0, sizeof(Map)*0x1000000);
-  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x100000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	//memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
-  result = (Map *)mmap(0, sizeof(Map)* 0x100000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+  
 	
 }
 
@@ -118,18 +118,22 @@ inline Map * findHash(Map * root, Map * target){
   }
   return NULL;
 }
+int32_t nResult = 0;
+int32_t allWord = 0;
 void reduceflat(){
-  for(int i = 0 ; i < 0x100000; i ++){
+  for(int i = 0 ; i < 0x1000000; i ++){
     if(reduceMap[i].value){
       memcpy(&result[reduceN++], &reduceMap[i], sizeof(Map));
       for(Map * cur = reduceMap[i].nextPtr; cur; cur = cur->nextPtr){
         memcpy(&result[reduceN++], cur, sizeof(Map));
+        if(reduceN == allWord)
+          break;
       }
       //memset(&reduceMap[i],0x00, sizeof(Map));
     }
   }
 }
-int hi=0;
+
 void do_Reduce(int32_t nWord){
   int32_t max = nWord;
   while(1){
@@ -141,11 +145,11 @@ void do_Reduce(int32_t nWord){
     
     int32_t i = shared_cur;
     Map * tMap = &globalMap[i];
-    int32_t index = tMap->hash.hash &0xffff;
+    int32_t index = tMap->hash.hash &0xffffff;
     Map * findMap = &reduceMap[index];
     //printf("[%s]\n",tMap->hash.key);
     if(!findMap->hash.hash){
-      hi++;
+      allWord++;
       memcpy(findMap, tMap, sizeof(Map));
       findMap->nextPtr = NULL;
     }
@@ -157,7 +161,7 @@ void do_Reduce(int32_t nWord){
         
       }
       else{
-        hi++;
+        allWord++;
         Map * cur;
         for(cur = findMap; cur->nextPtr; cur = cur->nextPtr){}
         cur->nextPtr = (Map *)malloc(sizeof(Map));
@@ -188,6 +192,8 @@ int main(int argc, char ** argv){
 		fprintf(stderr, "%s: not enough input\n", argv[0]);
 		exit(1);
 	}
+
+  
   pthread_t * threads = (pthread_t *)malloc(0x100 * sizeof(pthread_t));
   allocate_Map();
 	fp = fopen(argv[1], "r");
@@ -199,8 +205,8 @@ int main(int argc, char ** argv){
   if( fileLength > 0x10000){
     limit = (fileLength / 0x10000) + 1; 
   }
-  printf("%d / %d\n", fileLength, limit);
-  for(int32_t i = 0; i < limit; i++){
+  //printf("%d / %d\n", fileLength, limit);
+  while(!feof(fp)){
     pthread_mutex_init(&map_mutex, NULL);
     pthread_mutex_init(&reduce_mutex, NULL);
     shared_cur = 0;
@@ -214,17 +220,19 @@ int main(int argc, char ** argv){
       pthread_join(threads[i], NULL);
     if(nWord == 0)
       break;
-    //printf("complete map\n");
+    printf("complete map\n");
     for(int32_t i = 0; i < nThread; i++)
       pthread_create(&threads[i], NULL, do_Reduce, nWord);
     
     for(int32_t i = 0; i < nThread; i++)
       pthread_join(threads[i], NULL);
     //printf("%d\n",i);
-    //printf("%d : 0x%08x\n",i,hi);
-    //printf("complete reduce\n");
+    //printf("%d : 0x%08x 0x%08x\n",i,hi, hi2);
+    printf("complete reduce\n");
   }
-  printf("complete\n");
+  //printf("complete\n");
+  nResult = allWord;
+  result = (Map *)mmap(0, sizeof(Map)* nResult, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
   reduceflat();
   qsort(result, reduceN, sizeof(Map), compare);
   
