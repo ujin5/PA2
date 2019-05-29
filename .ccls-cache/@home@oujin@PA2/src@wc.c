@@ -64,7 +64,7 @@ void * stringRemoveNonAlphaNum(char *str){
 void allocate_Map() {
 	globalMap = (Map *)mmap(0, sizeof(Map)* 0x10000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	//memset((void *)globalMap, 0x0, sizeof(Map)*0x1000000);
-  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x1000000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
+  reduceMap = (Map *)mmap(0, sizeof(Map)* 0x100000, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
 	//memset((void *)reduceMap, 0x0, sizeof(Map)*0x10000);
   
 	
@@ -87,6 +87,11 @@ inline int32_t readWord(FILE * fp, char * buf){
   return r;
 }
 
+inline int32_t readLine(FILE *fp, char * buf){
+
+  int32_t s = fgets(buf, 4096, fp);
+  return s;
+}
 void do_Map(int32_t * nWord){
   //printf("START\n");
   char buf[1024];
@@ -101,15 +106,18 @@ void do_Map(int32_t * nWord){
       pthread_mutex_unlock(&map_mutex);
       continue; 
     }
+    (*nWord)++;
+    pthread_mutex_unlock(&map_mutex);
     strcpy(globalMap[index].hash.key, buf);
     //int32_t hval = index == 0 ? 0x811c9dc5 : globalMap[index -1].hash.hash;
     int32_t hash = fnv_32_str(globalMap[index].hash.key, 0x811c9dc5);
     globalMap[index].hash.hash= hash;
     globalMap[index].value = 1;
     //printf("%d : %s / %08x / %08x\n", index, globalMap[index].hash.key, globalMap[index].hash.hash, globalMap[index].value);
-    (*nWord)++;
-    pthread_mutex_unlock(&map_mutex);
+    
+    
   }
+
 }
 inline Map * findHash(Map * root, Map * target){
   for(Map * cur = root; cur; cur = cur->nextPtr){
@@ -121,32 +129,43 @@ inline Map * findHash(Map * root, Map * target){
 int32_t nResult = 0;
 int32_t allWord = 0;
 void reduceflat(){
-  for(int i = 0 ; i < 0x1000000; i ++){
+  for(int i = 0 ; i < 0x100000; i ++){
     if(reduceMap[i].value){
       memcpy(&result[reduceN++], &reduceMap[i], sizeof(Map));
       for(Map * cur = reduceMap[i].nextPtr; cur; cur = cur->nextPtr){
         memcpy(&result[reduceN++], cur, sizeof(Map));
-        if(reduceN == allWord)
-          break;
+
       }
+      if(reduceN == allWord)
+        break;
       //memset(&reduceMap[i],0x00, sizeof(Map));
     }
   }
 }
+struct _thread_arg{
+  int32_t nWord;
+  int32_t position;
+  int32_t max;
+};
+int32_t coll = 0;
+int32_t dup = 0;
+void do_Reduce(struct _thread_arg * args){
 
-void do_Reduce(int32_t nWord){
-  int32_t max = nWord;
+  int32_t nWord = args->nWord;
+  int32_t position = args->position;
+  int32_t i = 0;
+  //printf("%d %d %d \n", args->nWord, args->position, args->max);
   while(1){
-    pthread_mutex_lock(&reduce_mutex);
-    if(shared_cur >= nWord){
-      pthread_mutex_unlock(&reduce_mutex);
+    if(i >= args->max ){
       return;
     }
     
-    int32_t i = shared_cur;
-    Map * tMap = &globalMap[i];
-    int32_t index = tMap->hash.hash &0xffffff;
+    pthread_mutex_lock(&reduce_mutex);
+    Map * tMap = &globalMap[i+position];
+    int32_t index = tMap->hash.hash &0xfffff;
     Map * findMap = &reduceMap[index];
+
+   
     //printf("[%s]\n",tMap->hash.key);
     if(!findMap->hash.hash){
       allWord++;
@@ -154,14 +173,16 @@ void do_Reduce(int32_t nWord){
       findMap->nextPtr = NULL;
     }
     else{
-
+      
       Map * cur = findHash(findMap, tMap);
       if(cur){
+        dup++;
         cur->value++;
         
       }
       else{
         allWord++;
+        coll++;
         Map * cur;
         for(cur = findMap; cur->nextPtr; cur = cur->nextPtr){}
         cur->nextPtr = (Map *)malloc(sizeof(Map));
@@ -170,9 +191,12 @@ void do_Reduce(int32_t nWord){
         cur->nextPtr = NULL;
 
       }
+      
     }
-    shared_cur++;
+    i++;
     pthread_mutex_unlock(&reduce_mutex);
+    
+    
   }
 	return;
 }
@@ -194,7 +218,7 @@ int main(int argc, char ** argv){
 	}
 
   
-  pthread_t * threads = (pthread_t *)malloc(0x100 * sizeof(pthread_t));
+  pthread_t * threads = (pthread_t *)malloc(0x10 * sizeof(pthread_t));
   allocate_Map();
 	fp = fopen(argv[1], "r");
   fseek(fp, 0, SEEK_END);
@@ -206,8 +230,9 @@ int main(int argc, char ** argv){
     limit = (fileLength / 0x10000) + 1; 
   }
   //printf("%d / %d\n", fileLength, limit);
+
   while(!feof(fp)){
-    pthread_mutex_init(&map_mutex, NULL);
+      pthread_mutex_init(&map_mutex, NULL);
     pthread_mutex_init(&reduce_mutex, NULL);
     shared_cur = 0;
     int32_t index =0;
@@ -220,25 +245,47 @@ int main(int argc, char ** argv){
       pthread_join(threads[i], NULL);
     if(nWord == 0)
       break;
-    printf("complete map\n");
-    for(int32_t i = 0; i < nThread; i++)
-      pthread_create(&threads[i], NULL, do_Reduce, nWord);
+    //printf("%d\n",nWord);
+    //printf("complete map\n");
+    struct _thread_arg *args[15] = { 0, };
+    for(int32_t i = 0; i < nThread; i++){
+      args[i] = (struct _thread_arg *)malloc(sizeof(struct _thread_arg));
+      args[i]->nWord = nWord;
+      args[i]->max = nWord/14;
+      args[i]->position = (nWord/14)*i;
+      pthread_create(&threads[i], NULL, do_Reduce, args[i]);
+    }
     
-    for(int32_t i = 0; i < nThread; i++)
+    if(nWord%14){
+      args[14] = (struct _thread_arg *)malloc(sizeof(struct _thread_arg));
+      args[14]->nWord = nWord;
+      args[14]->max = nWord%14;
+      args[14]->position = (nWord/14)*14;
+      pthread_create(&threads[14], NULL, do_Reduce, args[14]);
+    } 
+
+    for(int32_t i = 0; i < nThread; i++){
       pthread_join(threads[i], NULL);
-    //printf("%d\n",i);
+    }
+    
+    if(nWord%14)
+      pthread_join(threads[14], NULL);
+    for(int32_t i = 0; i < 15; i++)
+      free(args[i]);
+    //printf("complete reduce\n");
+    //rintf("%d / %d / %d\n",allWord, coll, dup);
     //printf("%d : 0x%08x 0x%08x\n",i,hi, hi2);
-    printf("complete reduce\n");
+    
   }
-  //printf("complete\n");
   nResult = allWord;
   result = (Map *)mmap(0, sizeof(Map)* nResult, PROT_READ|PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
   reduceflat();
+  printf("complete : %d\n", reduceN);
   qsort(result, reduceN, sizeof(Map), compare);
   
   for(int32_t i = 0; i < reduceN; i++)
     printf("%s %d\n", result[i].hash.key, result[i].value);	
-  
+  printf("complete : %d\n", reduceN);
   /*
   while(fscanf(fp, "%s", buf) != EOF)
     printf("[%s]\n", buf);
